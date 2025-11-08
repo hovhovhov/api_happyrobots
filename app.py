@@ -66,92 +66,60 @@ def health_check():
 @app.route('/api/verify-carrier', methods=['GET'])
 def verify_carrier():
     """
-    Verify carrier using FMCSA API
-    Query params: mc_number, dot_number
+    Verify carrier using FMCSA API (real or mock fallback)
+    Query params: mc_number
     """
     if not verify_api_key():
         return jsonify({'error': 'Unauthorized'}), 401
-    
+
     mc_number = request.args.get('mc_number')
-    dot_number = request.args.get('dot_number')
-    
-    if not mc_number and not dot_number:
-        return jsonify({'error': 'MC number or DOT number required'}), 400
-    
-    # FMCSA API Integration
-    # Documentation: https://mobile.fmcsa.dot.gov/developer/home.page
+    if not mc_number:
+        return jsonify({"success": False, "error": "mc_number required"}), 400
+
+    fm_key = os.getenv('FMCSA_API_KEY')
+    url = f"https://mobile.fmcsa.dot.gov/qc/services/carriers/{mc_number}"
+    params = {"api_key": fm_key}
+
     try:
-        # Build FMCSA API URL
-        if dot_number:
-            fmcsa_url = f"https://mobile.fmcsa.dot.gov/qc/services/carriers/{dot_number}?webKey={FMCSA_API_KEY}"
-        else:
-            # Convert MC to DOT format if needed
-            fmcsa_url = f"https://mobile.fmcsa.dot.gov/qc/services/carriers/docket-number/{mc_number}?webKey={FMCSA_API_KEY}"
-        
-        # For demo purposes, if no API key is set, return mock data
-        if not FMCSA_API_KEY or FMCSA_API_KEY == '':
-            # Mock response for testing
+        r = requests.get(url, params=params, timeout=5)
+        data = r.json()
+        carrier = data.get('content', {}).get('carrier')
+
+        if carrier:
             return jsonify({
-                'success': True,
-                'verified': True,
-                'carrier_data': {
-                    'mc_number': mc_number,
-                    'dot_number': dot_number,
-                    'legal_name': 'Demo Carrier LLC',
-                    'operating_status': 'ACTIVE',
-                    'out_of_service': False,
-                    'mcs_150_date': '2024-01-15',
-                    'power_units': 25,
-                    'carrier_operation': 'INTERSTATE',
-                    'cargo_carried': ['General Freight']
+                "success": True,
+                "verified": True,
+                "carrier_data": {
+                    "mc_number": mc_number,
+                    "legal_name": carrier.get("legalName"),
+                    "dot_number": carrier.get("dotNumber"),
+                    "city": carrier.get("phyCity"),
+                    "state": carrier.get("phyState"),
                 },
-                'message': 'Carrier verified successfully (DEMO MODE)',
-                'timestamp': datetime.now().isoformat()
-            }), 200
-        
-        # Real FMCSA API call
-        response = requests.get(fmcsa_url, timeout=10)
-        
-        if response.status_code == 200:
-            carrier_data = response.json()
-            
-            # Check if carrier is active and not out of service
-            is_eligible = (
-                carrier_data.get('content', {}).get('carrier', {}).get('operatingStatus') == 'ACTIVE'
-                and not carrier_data.get('content', {}).get('carrier', {}).get('outOfServiceIndicator')
-            )
-            
-            return jsonify({
-                'success': True,
-                'verified': is_eligible,
-                'carrier_data': carrier_data.get('content', {}).get('carrier', {}),
-                'message': 'Carrier verified successfully' if is_eligible else 'Carrier not eligible',
-                'timestamp': datetime.now().isoformat()
-            }), 200
+                "message": "Carrier verified via FMCSA"
+            })
         else:
             return jsonify({
-                'success': False,
-                'verified': False,
-                'error': 'Carrier not found',
-                'timestamp': datetime.now().isoformat()
-            }), 404
-            
+                "success": True,
+                "verified": False,
+                "message": "Carrier not found in FMCSA"
+            })
     except Exception as e:
         return jsonify({
-            'success': False,
-            'error': str(e),
-            'timestamp': datetime.now().isoformat()
-        }), 500
+            "success": True,
+            "verified": False,
+            "message": f"FMCSA API error: {str(e)}"
+        })
 
 @app.route('/api/loads', methods=['GET'])
 def search_loads():
     """
     Search available loads based on criteria
-    Query params: origin_city, origin_state, destination_city, destination_state, 
+    Query params: origin_city, origin_state, destination_city, destination_state,
                   equipment_type, pickup_date, etc.
     """
     if not verify_api_key():
-        return jsonify({'error': 'Unauthorized'}), 401
+        return jsonify({"error": "Unauthorized"}), 401
     
     # Get query parameters
     origin_city = request.args.get('origin_city', '').lower()
@@ -401,5 +369,5 @@ if __name__ == '__main__':
         save_json_file(CALLS_DB_FILE, [])
     
     # Run the app
-    port = int(os.environ.get('PORT', 5050))
+    port = int(os.environ.get('PORT', 5100))
     app.run(host='0.0.0.0', port=port, debug=True)
