@@ -175,12 +175,34 @@ def search_loads():
     if not verify_api_key():
         return jsonify({"error": "Unauthorized"}), 401
     
+    # Helper function to split "Chicago, IL" format
+    def _split_city_state(val: str):
+        if ',' in val:
+            parts = [p.strip() for p in val.split(',')]
+            return (parts[0], parts[1]) if len(parts) == 2 else (parts[0], '')
+        return (val, '')
     
-    # Get query parameters
-    origin_city = request.args.get('origin_city', '').lower()
-    origin_state = request.args.get('origin_state', '').lower()
-    destination_city = request.args.get('destination_city', '').lower()
-    destination_state = request.args.get('destination_state', '').lower()
+    # Support both formats: "origin=Chicago, IL" AND "origin_city=Chicago"
+    origin = request.args.get('origin', '')
+    destination = request.args.get('destination', '')
+    
+    if origin:
+        origin_city, origin_state = _split_city_state(origin)
+    else:
+        origin_city = request.args.get('origin_city', '')
+        origin_state = request.args.get('origin_state', '')
+    
+    if destination:
+        destination_city, destination_state = _split_city_state(destination)
+    else:
+        destination_city = request.args.get('destination_city', '')
+        destination_state = request.args.get('destination_state', '')
+    
+    # Convert to lowercase for filtering
+    origin_city = origin_city.lower()
+    origin_state = origin_state.lower()
+    destination_city = destination_city.lower()
+    destination_state = destination_state.lower()
     equipment_type = request.args.get('equipment_type', '').lower()
     commodity = request.args.get('commodity', '').lower()
     min_temp = request.args.get('min_temp')
@@ -413,6 +435,13 @@ def internal_error(error):
         'error': 'Internal server error',
         'timestamp': datetime.now().isoformat()
     }), 500
+
+# ==================== ROUTE ALIASES ====================
+
+@app.route('/api/save-call-results', methods=['POST'])
+def save_call_results_alias():
+    """Alias for /api/call-results for compatibility"""
+    return save_call_results()
 
 # ==================== MAIN ====================
 
